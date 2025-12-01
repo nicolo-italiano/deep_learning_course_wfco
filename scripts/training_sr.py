@@ -7,26 +7,22 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from torch.nn import init
 
-import sys
-import logging
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s: %(message)s', # '%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
 # -------------------- Load Data --------------------
-data = torch.load('../data/5wt_dataset_1000_slsqp.pt')
-logging.info("Data loaded")
+data = torch.load('../data/5wt_dataset_100.pt')
+print("Data loaded")
 X = data[0]
 Y = data[1]
+print("Loaded X shape:", X.shape)
+print("Loaded Y shape:", Y.shape)
 
-logging.info("Loaded X shape: %s", X.shape)
-logging.info("Loaded Y shape: %s", Y.shape)
+n_layouts_to_keep = 10
+cases_per_layout = 360 * 11 * 46
+rows_to_keep = n_layouts_to_keep * cases_per_layout
 
-
-cases_per_layout = 12 * 10 * 46
+X = X[:rows_to_keep, :]
+Y = Y[:rows_to_keep]
+print("Reduced X shape:", X.shape)
+print("Reduced Y shape:", Y.shape)
 
 # -------------------- Split dataset --------------------
 def split_dataset(X, Y, cases_per_layout, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, shuffle=False):
@@ -34,7 +30,6 @@ def split_dataset(X, Y, cases_per_layout, train_ratio=0.6, val_ratio=0.2, test_r
     Split X, Y by layouts into train/val/test sets.
     """
     n_layouts = X.shape[0] // cases_per_layout
-    logging.info("Total layouts: %s", n_layouts)
     assert X.shape[0] % cases_per_layout == 0, "Dataset size mismatch!"
 
     # Layout indices
@@ -80,6 +75,8 @@ def normalize_train_based(X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_i
     y_min = Y_train.min()
     y_max = Y_train.max()
 
+    print(y_min, y_max)
+
     def apply_norm(X, Y):
         X_norm = X.clone()
         finite_mask = ~torch.isnan(X[:, normalize_indices])
@@ -105,10 +102,10 @@ def normalize_train_based(X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_i
 (X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = normalize_train_based(
     X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_indices=[10, 11, 12, 13, 14]
 )
-logging.info("Dataset splitted and normalized.")
+print("Dataset splitted and normalized.")
 
-logging.info(X_train[:11])
-logging.info(Y_train[:11])
+print(X_train[:11])
+print(Y_train[:11])
 
 PAD_VALUE = 999  # outside normalized range [-1, 1]
 X_train[torch.isnan(X_train)] = PAD_VALUE
@@ -157,34 +154,29 @@ class YawRegressionNet(nn.Module):
 batch_size = 512
 n_epochs = 100
 learning_rate = 1e-3
-hidden_layers = [256, 256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
+hidden_layers = [256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
 torch.manual_seed(42)
-
-logging.info("Batch size: %s", batch_size)
-logging.info("Number of epochs: %s", n_epochs)
-logging.info("Learning rate: %s", learning_rate)
-
+print("Batch size:", batch_size)
+print("Number of epochs:", n_epochs)
+print("Learning rate:", learning_rate)
+print("Hidden layers:", hidden_layers)
 
 filename = f"{batch_size}_{learning_rate}_{n_epochs}_" + "x".join(map(str, hidden_layers))
-
-logging.info("Hidden layers: %s", hidden_layers)
-logging.info("Filename identifier: %s", filename)
+print("Filename identifier:", filename)
 
 # Prepare datasets with masks and loaders
 train_dataset = TensorDataset(X_train, Y_train, mask_train)
 val_dataset = TensorDataset(X_val, Y_val, mask_val)
-test_dataset = TensorDataset(X_test, Y_test, mask_test)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-device = torch.device('cuda')   # if torch.cuda.is_available() else 'cpu'
-logging.info("Device: %s", device)  # device can be a torch.device; it will be str()-formatted
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print("Device:", device)
 
 model = YawRegressionNet(n_inputs=X_train.shape[1], hidden_layers=hidden_layers, n_outputs=1).to(device)
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 n_datapoints = X_train.shape[0]
-logging.info(f"Ratio data points / parameters: {n_datapoints / n_parameters:.2f}")
+print(f"Ratio data points / parameters: {n_datapoints / n_parameters:.2f}")
 
 criterion = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
@@ -212,15 +204,8 @@ def compute_rmse(loader, model, device):
 # Lists to store RMSE
 train_rmse_deg, val_rmse_deg = [], []
 
-
-# Early stopping parameters
-patience = 10  # number of epochs to wait for improvement
-best_val_rmse = float('inf')
-epochs_no_improve = 0
-best_model_state = None
-
 # -------------------- TRAINING LOOP --------------------
-for epoch in trange(n_epochs, desc="Training epochs", colour="blue"):
+for epoch in range(n_epochs):
     model.train()
     total_train_loss = 0.0
     for xb, yb, maskb in train_loader:
@@ -243,24 +228,7 @@ for epoch in trange(n_epochs, desc="Training epochs", colour="blue"):
     val_rmse_deg.append(rmse_val)
 
     if (epoch + 1) % 5 == 0 or epoch == 0:
-        logging.info(f"Epoch {epoch+1}/{n_epochs}: Train RMSE(deg): {rmse_train:.4f}, Val RMSE(deg): {rmse_val:.4f}")
-
-    
-    # ---- EARLY STOPPING CHECK ----
-    if rmse_val < best_val_rmse:
-        best_val_rmse = rmse_val
-        best_model_state = model.state_dict()  # save best model
-        epochs_no_improve = 0
-    else:
-        epochs_no_improve += 1
-
-    if epochs_no_improve >= patience:
-        logging.info(f"Early stopping at epoch {epoch+1}. Best Val RMSE: {best_val_rmse:.4f}")
-        break
-    
-# Load best model before evaluation
-if best_model_state is not None:
-    model.load_state_dict(best_model_state)
+        print(f"Epoch {epoch+1}/{n_epochs}: Train RMSE(deg): {rmse_train:.4f}, Val RMSE(deg): {rmse_val:.4f}")
 
 # make filename directory if not exists
 import os
@@ -276,10 +244,9 @@ plt.xlabel('Epoch')
 plt.ylabel('RMSE Loss (°)')
 plt.legend()
 plt.grid()
-plt.tight_layout()
 # Save the plot
 plt.savefig(f"../results/figures/{filename}/{filename}.png", dpi=300)
-logging.info(f"Plot saved as {filename}.png")
+print(f"Plot saved as {filename}.png")
 
 
 
@@ -303,77 +270,16 @@ from sklearn.metrics import r2_score
 r2 = r2_score(all_true, all_preds)
 
 # Plot
-plt.figure()
+plt.figure(figsize=(6, 6))
 plt.scatter(all_preds, all_true, s=2, alpha=0.5)
-plt.xlabel("Normalized yaw prediction")
-plt.ylabel("Normalized training data")
-plt.title(f"Train Data $R^2$: {r2:.2f}")
+plt.xlabel("normalized yaw prediction")
+plt.ylabel("normalized training data")
+plt.title(f"$R^2$: {r2:.2f}")
 plt.grid(True)
 plt.xlim(-1, 1)
 plt.ylim(-1, 1)
-# add y=x line black and dashed
-plt.plot([-1, 1], [-1, 1], 'k--', lw=1)
-plt.tight_layout()
 plt.savefig(f"../results/figures/{filename}/{filename}_r2plot.png", dpi=300)
-logging.info(f"Scatter plot saved as {filename}_scatter.png")
-
-
-# -------------------- Scatter Plot on Test Set --------------------
-
-model.eval()
-all_preds_test, all_true_test = [], []
-
-with torch.no_grad():
-    for xb, yb, maskb in test_loader:  # <-- use test_loader here
-        xb, yb, maskb = xb.to(device), yb.to(device), maskb.to(device)
-        y_pred = model(xb, maskb).squeeze()
-        all_preds_test.append(y_pred.cpu())
-        all_true_test.append(yb.cpu())
-
-# Concatenate all batches
-all_preds_test = torch.cat(all_preds_test).numpy()
-all_true_test = torch.cat(all_true_test).numpy()
-
-# Compute R^2 score
-from sklearn.metrics import r2_score
-r2_test = r2_score(all_true_test, all_preds_test)
-
-# Plot
-plt.figure()
-plt.scatter(all_preds_test, all_true_test, s=2, alpha=0.5)
-plt.xlabel("Normalized yaw prediction")
-plt.ylabel("Normalized test data")
-plt.title(f"Test Data $R^2$: {r2_test:.2f}")
-plt.grid(True)
-plt.xlim(-1, 1)
-plt.ylim(-1, 1)
-plt.plot([-1, 1], [-1, 1], 'k--', lw=1)
-plt.tight_layout()
-plt.savefig(f"../results/figures/{filename}/{filename}_r2plot_test.png", dpi=300)
-logging.info(f"Test scatter plot saved as {filename}_r2plot_test.png")
-
-# -- -------------------- Calculate metrics on test data --------------------
-
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score, max_error
-
-# Denormalize predictions and true values
-y_pred_deg = denormalize(all_preds_test)
-y_true_deg = denormalize(all_true_test)
-
-# Compute metrics
-rmse_test = root_mean_squared_error(y_true_deg, y_pred_deg)  # RMSE
-mae_test = mean_absolute_error(y_true_deg, y_pred_deg)
-r2_test_denorm = r2_score(y_true_deg, y_pred_deg)
-mape_test = (abs((y_true_deg - y_pred_deg) / y_true_deg).mean()) * 100  # in %
-max_err_test = max_error(y_true_deg, y_pred_deg)
-
-# Log results
-logging.info(f"Test Metrics (De-normalized):")
-logging.info(f"RMSE: {rmse_test:.4f}°")
-logging.info(f"MAE: {mae_test:.4f}°")
-logging.info(f"R²: {r2_test_denorm:.4f}")
-logging.info(f"MAPE: {mape_test:.2f}%")
-logging.info(f"Max Error: {max_err_test:.4f}°")
+print(f"Scatter plot saved as {filename}_scatter.png")
 
 
 
