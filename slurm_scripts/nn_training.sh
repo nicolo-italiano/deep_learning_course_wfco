@@ -4,7 +4,7 @@
 #SBATCH --error=../logs/%x_job_%j.err  # Standard error log (%j expands to jobId)
 #SBATCH --nodes=1                        # Request 1 node
 #SBATCH --time=24:00:00                  # Maximum execution time (HH:MM:SS), adjust as needed
-#SBATCH --partition=gpuq #fatq                # Request the 'windq', 'workq' or 'rome' partition, or gpuq for cables
+#SBATCH --partition=fatq, gpuq    # gpuq, fatq            # Request the 'windq', 'workq' or 'rome' partition, or gpuq for cables
 
 # Capture the start time
 start_time=$(date +%s)

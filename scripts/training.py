@@ -130,8 +130,8 @@ plt.hist(Y_test.numpy(), bins=50)
 plt.title("Test Y distribution")
 plt.savefig("../results/figures/y_distribution_test.png", dpi=300)
 
-logging.info(X_test[:100])
-logging.info(Y_test[:100])
+# logging.info(X_test[:10])
+# logging.info(Y_test[:10])
 
 (X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = normalize_train_based(
     X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_indices=[10, 11, 12, 13, 14]
@@ -423,7 +423,7 @@ y_true_deg = denormalize(all_true_test)
 rmse_test = root_mean_squared_error(y_true_deg, y_pred_deg)  # RMSE
 mae_test = mean_absolute_error(y_true_deg, y_pred_deg)
 r2_test_denorm = r2_score(y_true_deg, y_pred_deg)
-mape_test = (abs((y_true_deg - y_pred_deg) / y_true_deg).mean()) * 100  # in %
+# mape_test = (abs((y_true_deg - y_pred_deg) / y_true_deg).mean()) * 100  # in %
 max_err_test = max_error(y_true_deg, y_pred_deg)
 
 # Log results
@@ -431,7 +431,7 @@ logging.info(f"Test Metrics (De-normalized):")
 logging.info(f"RMSE: {rmse_test:.4f}°")
 logging.info(f"MAE: {mae_test:.4f}°")
 logging.info(f"R²: {r2_test_denorm:.4f}")
-logging.info(f"MAPE: {mape_test:.2f}%")
+# logging.info(f"MAPE: {mape_test:.2f}%")
 logging.info(f"Max Error: {max_err_test:.4f}°")
 
 
