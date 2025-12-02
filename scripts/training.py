@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 
 # -------------------- Load Data --------------------
-data = torch.load('../data/5wt_dataset_1000_slsqp.pt')
+data = torch.load('../data/5wt_dataset_1000_slsqp_simple.pt')
 logging.info("Data loaded")
 X = data[0]
 Y = data[1]
@@ -26,7 +26,7 @@ logging.info("Loaded X shape: %s", X.shape)
 logging.info("Loaded Y shape: %s", Y.shape)
 
 
-cases_per_layout = 12 * 10 * 46
+cases_per_layout = 31 * 9 * 5
 
 # -------------------- Split dataset --------------------
 def split_dataset(X, Y, cases_per_layout, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, shuffle=False):
@@ -80,6 +80,8 @@ def normalize_train_based(X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_i
     y_min = Y_train.min()
     y_max = Y_train.max()
 
+    # logging.info("Y_min:", y_min, "Y_max:", y_max)
+
     def apply_norm(X, Y):
         X_norm = X.clone()
         finite_mask = ~torch.isnan(X[:, normalize_indices])
@@ -100,7 +102,36 @@ def normalize_train_based(X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_i
 
 
 # --- Usage ---
-(X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = split_dataset(X, Y, cases_per_layout)
+(X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = split_dataset(X, Y, cases_per_layout, shuffle=True)
+
+# print shapes of train/val/test sets
+logging.info("X_train shape: %s", X_train.shape)
+logging.info("Y_train shape: %s", Y_train.shape)
+logging.info("X_val shape: %s", X_val.shape)
+logging.info("Y_val shape: %s", Y_val.shape)
+logging.info("X_test shape: %s", X_test.shape)
+logging.info("Y_test shape: %s", Y_test.shape)
+
+logging.info("Train Y variance: %s", Y_train.var())
+logging.info("Val Y variance: %s", Y_val.var())
+logging.info("Test Y variance: %s", Y_test.var())
+
+# Plot Y distributions
+plt.figure()
+plt.hist(Y_train.numpy(), bins=50)
+plt.title("Train Y distribution")
+plt.savefig("../results/figures/y_distribution_train.png", dpi=300)
+plt.figure()
+plt.hist(Y_val.numpy(), bins=50)
+plt.title("Validation Y distribution")
+plt.savefig("../results/figures/y_distribution_val.png", dpi=300)
+plt.figure()
+plt.hist(Y_test.numpy(), bins=50)
+plt.title("Test Y distribution")
+plt.savefig("../results/figures/y_distribution_test.png", dpi=300)
+
+logging.info(X_test[:100])
+logging.info(Y_test[:100])
 
 (X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = normalize_train_based(
     X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_indices=[10, 11, 12, 13, 14]
@@ -155,9 +186,9 @@ class YawRegressionNet(nn.Module):
 
 # -------------------- Training Setup --------------------
 batch_size = 512
-n_epochs = 100
+n_epochs = 5
 learning_rate = 1e-3
-hidden_layers = [256, 256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
+hidden_layers = [256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
 torch.manual_seed(42)
 
 logging.info("Batch size: %s", batch_size)
@@ -165,7 +196,7 @@ logging.info("Number of epochs: %s", n_epochs)
 logging.info("Learning rate: %s", learning_rate)
 
 
-filename = f"{batch_size}_{learning_rate}_{n_epochs}_" + "x".join(map(str, hidden_layers))
+filename = f"simple_{batch_size}_{learning_rate}_{n_epochs}_" + "x".join(map(str, hidden_layers))
 
 logging.info("Hidden layers: %s", hidden_layers)
 logging.info("Filename identifier: %s", filename)
@@ -316,6 +347,34 @@ plt.plot([-1, 1], [-1, 1], 'k--', lw=1)
 plt.tight_layout()
 plt.savefig(f"../results/figures/{filename}/{filename}_r2plot.png", dpi=300)
 logging.info(f"Scatter plot saved as {filename}_scatter.png")
+
+# -------------------- Scatter Plot on Validation Set ----------------------
+model.eval()
+all_preds_val, all_true_val = [], []
+with torch.no_grad():
+    for xb, yb, maskb in val_loader:
+        xb, yb, maskb = xb.to(device), yb.to(device), maskb.to(device)
+        y_pred = model(xb, maskb).squeeze()
+        all_preds_val.append(y_pred.cpu())
+        all_true_val.append(yb.cpu())
+# Concatenate all batches
+all_preds_val = torch.cat(all_preds_val).numpy()
+all_true_val = torch.cat(all_true_val).numpy()
+# Compute R^2 score
+r2_val = r2_score(all_true_val, all_preds_val)
+# Plot
+plt.figure()
+plt.scatter(all_preds_val, all_true_val, s=2, alpha=0.5)
+plt.xlabel("Normalized yaw prediction")
+plt.ylabel("Normalized validation data")
+plt.title(f"Validation Data $R^2$: {r2_val:.2f}")
+plt.grid(True)
+plt.xlim(-1, 1)
+plt.ylim(-1, 1)
+plt.plot([-1, 1], [-1, 1], 'k--', lw=1)
+plt.tight_layout()
+plt.savefig(f"../results/figures/{filename}/{filename}_r2plot_val.png", dpi=300)
+logging.info(f"Validation scatter plot saved as {filename}_r2plot_val.png")
 
 
 # -------------------- Scatter Plot on Test Set --------------------
