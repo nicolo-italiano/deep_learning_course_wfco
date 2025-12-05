@@ -246,7 +246,7 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-device = torch.device('cuda')   # if torch.cuda.is_available() else 'cpu'
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 logging.info("Device: %s", device)  # device can be a torch.device; it will be str()-formatted
 
 model = YawRegressionNet(n_inputs=X_train.shape[1], hidden_layers=hidden_layers, n_outputs=1).to(device)
@@ -258,8 +258,7 @@ criterion = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
 # Denormalization function
-y_min, y_max = -25.0, 25.0
-def denormalize(y_norm):
+def denormalize(y_norm, y_max=25.0, y_min=-25.0):
     return (((y_norm + 1) / 2) * (y_max - y_min)) + y_min
 
 # Incremental RMSE calculation
