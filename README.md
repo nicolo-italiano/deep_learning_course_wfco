@@ -10,6 +10,8 @@ pip install -r requirements.txt
 ## Data
 The preprocessed data needed to run the main notebook (*01_main_notebook.ipynb*) can be downloaded at this [link](https://dtudk-my.sharepoint.com/:u:/g/personal/nicit_dtu_dk/EX96_QZYCQZMhQgLV_bEnl0BgosY2sJLT1s48-sCzHR6Cw?e=jhTNmx), using a DTU account. Then, you can create a folder *data* and save it as *"5wt_dataset_1000_slsqp_simple_complete.pt"*.
 
+Please contact nicit@dtu.dk in case of any issue with the data or the scripts.
+
 ## Structure
 
 The repository loosely aligns with the [Cookiecutter for data science](https://cookiecutter-data-science.drivendata.org/) template. Specifically, it is structured as follow:
@@ -26,7 +28,7 @@ deep_learning_course_wfco/
 |       model_reduced_512_0.00075_100_1000x1000_job3.pth
 |       model_reduced_512_0.00075_100_1000x1000x1000_job4.pth
 |       model_reduced_512_0.00075_100_1000x1000x1000x1000_job5.pth
-|       model_reduced_512_0.0005_100_1000x1000_job6.pth
+|       model_reduced_512_0.0005_100_1000x1000_job6.pth                  # best model
 |       model_reduced_512_0.0005_100_1000x1000x1000_job7.pth
 |       model_reduced_512_0.0005_100_1000x1000x1000x1000_job8.pth
 |
