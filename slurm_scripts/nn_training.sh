@@ -1,8 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=nn_training   # Job name   
-#SBATCH --output=../logs/%x_job_%j.out # Standard output log (%j expands to jobId)
-#SBATCH --error=../logs/%x_job_%j.err  # Standard error log (%j expands to jobId)
-#SBATCH --nodes=1                        # Request 1 node
+#SBATCH --output=../logs/%x_job_%j_%a.out # Standard output log (%j expands to jobId)
+#SBATCH --error=../logs/%x_job_%j_%a.err  # Standard error log (%j expands to jobId)
+# #SBATCH --nodes=1                        # Request 1 node
+#SBATCH --array=0-8                     # Array job with indices from 0 to 8
 #SBATCH --time=24:00:00                  # Maximum execution time (HH:MM:SS), adjust as needed
 #SBATCH --partition=fatq, gpuq    # gpuq, fatq            # Request the 'windq', 'workq' or 'rome' partition, or gpuq for cables
 

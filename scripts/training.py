@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
+import os
 import torch
 from tqdm import trange
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from torch.nn import init
+
 
 import sys
 import logging
@@ -17,7 +19,7 @@ logging.basicConfig(
 )
 
 # -------------------- Load Data --------------------
-data = torch.load('../data/5wt_dataset_1000_slsqp_simple.pt')
+data = torch.load('../data/5wt_dataset_1000_slsqp_simple_complete.pt')
 logging.info("Data loaded")
 X = data[0]
 Y = data[1]
@@ -25,8 +27,19 @@ Y = data[1]
 logging.info("Loaded X shape: %s", X.shape)
 logging.info("Loaded Y shape: %s", Y.shape)
 
-
 cases_per_layout = 31 * 9 * 5
+n_layouts_to_keep = 9600
+
+# Reduce dataset as training was taking too long
+rows_to_keep = n_layouts_to_keep * cases_per_layout
+X = X[:rows_to_keep, :]
+Y = Y[:rows_to_keep]
+print("Reduced X shape:", X.shape)
+print("Reduced Y shape:", Y.shape)
+
+# Get number of SLURM array jobs used for the grid search
+n_jobs = int(os.environ.get("SLURM_ARRAY_TASK_COUNT", 1))
+logging.info("Number of jobs: %s", n_jobs)
 
 # -------------------- Split dataset --------------------
 def split_dataset(X, Y, cases_per_layout, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, shuffle=False):
@@ -101,8 +114,7 @@ def normalize_train_based(X_train, Y_train, X_val, Y_val, X_test, Y_test, skip_i
     return (X_train_norm, Y_train_norm), (X_val_norm, Y_val_norm), (X_test_norm, Y_test_norm)
 
 
-# --- Usage ---
-(X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = split_dataset(X, Y, cases_per_layout, shuffle=True)
+(X_train, Y_train), (X_val, Y_val), (X_test, Y_test) = split_dataset(X, Y, cases_per_layout, shuffle=False)
 
 # print shapes of train/val/test sets
 logging.info("X_train shape: %s", X_train.shape)
@@ -119,14 +131,17 @@ logging.info("Test Y variance: %s", Y_test.var())
 # Plot Y distributions
 plt.figure()
 plt.hist(Y_train.numpy(), bins=50)
+plt.grid()
 plt.title("Train Y distribution")
 plt.savefig("../results/figures/y_distribution_train.png", dpi=300)
 plt.figure()
 plt.hist(Y_val.numpy(), bins=50)
+plt.grid()
 plt.title("Validation Y distribution")
 plt.savefig("../results/figures/y_distribution_val.png", dpi=300)
 plt.figure()
 plt.hist(Y_test.numpy(), bins=50)
+plt.grid()
 plt.title("Test Y distribution")
 plt.savefig("../results/figures/y_distribution_test.png", dpi=300)
 
@@ -185,18 +200,40 @@ class YawRegressionNet(nn.Module):
 
 
 # -------------------- Training Setup --------------------
+if n_jobs == 1:
+    learning_rate = 1e-3
+    hidden_layers = [256, 256, 256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
+    job_id = 0
+elif n_jobs == 9:
+    # grid search for 3 different LR and 3 NN depths
+    job_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
+    logging.info("Job ID: %s", job_id)
+
+    # Grid search parameters
+    lr_options = [1e-3, 7.5e-4, 5e-4]
+    depth_options = {
+        0: [1000, 1000],
+        1: [1000, 1000, 1000],
+        2: [1000, 1000, 1000, 1000]
+    }
+
+    # Set LR and depth based on job ID
+    lr_idx = job_id // 3
+    depth_idx = job_id % 3
+    learning_rate = lr_options[lr_idx]
+    hidden_layers = depth_options[depth_idx]
+else:
+    raise ValueError("Unsupported number of jobs for this script.")
+
 batch_size = 512
-n_epochs = 5
-learning_rate = 1e-3
-hidden_layers = [256, 256, 256]   # [1024, 1024, 512, 512, 256, 128, 64]
+n_epochs = 100
 torch.manual_seed(42)
 
 logging.info("Batch size: %s", batch_size)
 logging.info("Number of epochs: %s", n_epochs)
 logging.info("Learning rate: %s", learning_rate)
 
-
-filename = f"simple_{batch_size}_{learning_rate}_{n_epochs}_" + "x".join(map(str, hidden_layers))
+filename = f"reduced_{batch_size}_{learning_rate}_{n_epochs}_" + "x".join(map(str, hidden_layers)) + f"_job{job_id}"
 
 logging.info("Hidden layers: %s", hidden_layers)
 logging.info("Filename identifier: %s", filename)
@@ -294,7 +331,6 @@ if best_model_state is not None:
     model.load_state_dict(best_model_state)
 
 # make filename directory if not exists
-import os
 os.makedirs(f"../results/figures/{filename}", exist_ok=True)
 
 
@@ -423,19 +459,13 @@ y_true_deg = denormalize(all_true_test)
 rmse_test = root_mean_squared_error(y_true_deg, y_pred_deg)  # RMSE
 mae_test = mean_absolute_error(y_true_deg, y_pred_deg)
 r2_test_denorm = r2_score(y_true_deg, y_pred_deg)
-# mape_test = (abs((y_true_deg - y_pred_deg) / y_true_deg).mean()) * 100  # in %
-max_err_test = max_error(y_true_deg, y_pred_deg)
 
 # Log results
 logging.info(f"Test Metrics (De-normalized):")
 logging.info(f"RMSE: {rmse_test:.4f}°")
 logging.info(f"MAE: {mae_test:.4f}°")
 logging.info(f"R²: {r2_test_denorm:.4f}")
-# logging.info(f"MAPE: {mape_test:.2f}%")
-logging.info(f"Max Error: {max_err_test:.4f}°")
-
-
 
 # Save the trained model
-# torch.save(model.state_dict(), f"../models/yaw_regression_model_{filename}.pth")
-# print(f"Model saved as yaw_regression_model_{filename}.pth")
+torch.save(model.state_dict(), f"../models/model_{filename}.pth")
+print(f"Model saved as model_{filename}.pth")
